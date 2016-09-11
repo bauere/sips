@@ -10,9 +10,9 @@
 #define _POSIX_C_SOURCE 200809L
 #define USAGE "Usage: sips [-v] <input> <patch> <output>"
 
-int log_flag = 0;
-uint8_t *input_bytes;
-size_t input_size;
+static int log_flag = 0;
+static uint8_t *input_bytes;
+static size_t input_size;
 
 int check_header(FILE *patch)
 {
@@ -142,9 +142,9 @@ int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 }
 int main(int argc, char **argv)
 {
-	FILE *in;
-	FILE *patch;
-	FILE *out;
+	FILE *in = 0;
+	FILE *patch = 0;
+	FILE *out = 0;
 
 	if (arghandler(argc, argv, &in, &patch, &out) < 0) {
 		puts(USAGE);
