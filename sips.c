@@ -1,4 +1,5 @@
-#include <byteswap.h>
+/* sips: a simple ips patcher */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,6 +12,7 @@
 
 int log_flag = 0;
 uint8_t *input_bytes;
+size_t input_size;
 
 int check_header(FILE *patch)
 {
@@ -28,11 +30,11 @@ int read_records(FILE *patch)
 {
 	uint8_t offset_bytes[3];
 	uint8_t size_bytes[2];
-	uint32_t offset = 0;
-	uint16_t size = 0;
+	uint32_t offset;
+	uint16_t size;
 
 	if (log_flag)
-		printf("Offset\tSize\n");
+		printf("Offset\tSize\tRLE\tRLE Size\tCurrent output size\n");
 
 	for (;;) {
 		fread(offset_bytes, 3*sizeof(uint8_t), 1, patch);
@@ -45,36 +47,64 @@ int read_records(FILE *patch)
 		size = byte2_to_uint(size_bytes);
 
 		if (size) {
-			apply_record(patch, size, offset);
+			/* Failed realloc. */
+			if (apply_record(patch, size, offset) < 0)
+				return -1;
 		} else {
 			fread(size_bytes, 2*sizeof(uint8_t), 1, patch);
 			size = byte2_to_uint(size_bytes);
-			apply_record_rle(patch, size, offset);
+			/* Failed realloc. */
+			if (apply_record_rle(patch, size, offset) < 0)
+				return -1;
 		}
 	}
 	return 0;
 }
 int apply_record(FILE *patch, uint16_t size, uint32_t offset)
 {
-	uint8_t patchbyte = 0;
+	uint8_t patchbyte;
 
-	if (log_flag)
-		printf("%06X\t%04X\n", offset, size);
+	if (log_flag) {
+		printf("%06X\t%04X\tno\tn/a\t\t%06X\n", \
+		       offset, size, input_size);
+	}
+	if ((offset + size) > input_size) {
+		input_bytes = realloc(input_bytes, offset + size);
+		if (!input_bytes)
+			return -1;
+
+		input_size = offset + size;
+	}
 	for (int i = 0; i < size; i++) {
 		patchbyte = fgetc(patch);
 		input_bytes[offset + i] = patchbyte;
 	}
 	return 0;
 }
-int apply_record_rle(FILE *patch, uint16_t rle_size, uint32_t offset)
+int apply_record_rle(FILE *patch, uint16_t size, uint32_t offset)
 {
-	puts("RLE");
+	uint8_t patchbyte = fgetc(patch);
+
+	if (log_flag) {
+		printf("%06X\t0000\tyes\t%04X\t\t%06X\n", \
+		       offset, size, input_size);
+	}
+	if ((offset + size) > input_size) {
+		input_bytes = realloc(input_bytes, offset + size);
+		if (!input_bytes)
+			return -1;
+
+		input_size = offset + size;
+	}
+	for (int i = 0; i < size; i++)
+		input_bytes[offset + i] = patchbyte;
 	return 0;
 }
+/* Prevent big endian byte swaps. */
 inline uint16_t byte2_to_uint(uint8_t *bytes)
 {
 	uint16_t ret = (((uint16_t)bytes[0] << 8) & 0xFF00) | \
-		  (((uint16_t)bytes[1])      & 0x00FF);
+		       (((uint16_t)bytes[1])      & 0x00FF);
 
 	return ret;
 }
@@ -104,7 +134,7 @@ int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 			*out = fopen(argv[i], "wb+");
 		}
 	}
-
+	/* If a file pointer hasn't been successfully created, error. */
 	if (!(*in) || !(*patch) || !(*out)) {
 		return -1;
 	}
@@ -112,10 +142,9 @@ int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 }
 int main(int argc, char **argv)
 {
-	FILE *in = 0;
-	FILE *patch = 0;
-	FILE *out = 0;
-	size_t input_size;
+	FILE *in;
+	FILE *patch;
+	FILE *out;
 
 	if (arghandler(argc, argv, &in, &patch, &out) < 0) {
 		puts(USAGE);
@@ -131,8 +160,14 @@ int main(int argc, char **argv)
 	fread(input_bytes, input_size, 1, in);
 	fclose(in);
 
-	check_header(patch);
-	read_records(patch);
+	if (check_header(patch) < 0) {
+		puts("Invalid patch file.");
+		return 0;
+	}
+	if (read_records(patch) < 0) {
+		puts("Memory allocation error.");
+		return 0;
+	}
 
 	fwrite(input_bytes, input_size, 1, out);
 	return 0;
