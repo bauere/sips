@@ -7,8 +7,9 @@
 #include "sips.h"
 
 #define _POSIX_C_SOURCE 200809L
-#define ERROR -1
+#define USAGE "Usage: sips [-v] <input> <patch> <output>"
 
+int log_flag = 0;
 uint8_t *input_bytes;
 
 int check_header(FILE *patch)
@@ -19,7 +20,7 @@ int check_header(FILE *patch)
 
 	if (strncmp((char*)buf, "PATCH", 5) != 0) {
 		puts("Invalid patch file.");
-		return ERROR;
+		return -1;
 	}
 	return 0;
 }
@@ -29,6 +30,9 @@ int read_records(FILE *patch)
 	uint8_t size_bytes[2];
 	uint32_t offset = 0;
 	uint16_t size = 0;
+
+	if (log_flag)
+		printf("Offset\tSize\n");
 
 	for (;;) {
 		fread(offset_bytes, 3*sizeof(uint8_t), 1, patch);
@@ -54,6 +58,8 @@ int apply_record(FILE *patch, uint16_t size, uint32_t offset)
 {
 	uint8_t patchbyte = 0;
 
+	if (log_flag)
+		printf("%06X\t%04X\n", offset, size);
 	for (int i = 0; i < size; i++) {
 		patchbyte = fgetc(patch);
 		input_bytes[offset + i] = patchbyte;
@@ -67,7 +73,7 @@ int apply_record_rle(FILE *patch, uint16_t rle_size, uint32_t offset)
 }
 inline uint16_t byte2_to_uint(uint8_t *bytes)
 {
-	int ret = (((uint16_t)bytes[0] << 8) & 0xFF00) | \
+	uint16_t ret = (((uint16_t)bytes[0] << 8) & 0xFF00) | \
 		  (((uint16_t)bytes[1])      & 0x00FF);
 
 	return ret;
@@ -79,21 +85,46 @@ inline uint32_t byte3_to_uint(uint8_t *bytes)
 			(((uint32_t)bytes[2]));
 	return ret;
 }
-int main(int argc, char **argv)
+int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 {
-	if (argc != 3) {
-		puts("Usage: sips [FILE] [PATCH]");
-		return ERROR;
+	if (argc < 4 || argc > 5)
+		return -1;
+
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-v") == 0) {
+			log_flag = 1;
+		}
+		else if (!(*in)) {
+			*in = fopen(argv[i], "rb");
+		}
+		else if (!(*patch)) {
+			*patch = fopen(argv[i], "rb");
+		}
+		else if (!(*out)) {
+			*out = fopen(argv[i], "wb+");
+		}
 	}
 
-	FILE *patch = fopen(argv[2], "rb");
-	FILE *out = fopen("patched", "wb+");
-	FILE *in = fopen(argv[1], "rb");
+	if (!(*in) || !(*patch) || !(*out)) {
+		return -1;
+	}
+
+}
+int main(int argc, char **argv)
+{
+	FILE *in = 0;
+	FILE *patch = 0;
+	FILE *out = 0;
+	size_t input_size;
+
+	if (arghandler(argc, argv, &in, &patch, &out) < 0) {
+		puts(USAGE);
+		return 0;
+	}
 
 	fseek(in, 0, SEEK_END);
-	uint64_t input_size = ftell(in);
+	input_size = ftell(in);
 	rewind(in);
-	input_size = 8388608;
 
 	input_bytes = malloc(input_size * sizeof(uint8_t));
 
