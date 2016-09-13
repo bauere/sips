@@ -6,7 +6,7 @@ CFLAGS=-std=c99 -pedantic
 sips:   sips.o	
 	$(CC) -o sips sips.o
 
-sips.o: sips.c sips.h
+sips.o: sips.c
 	$(CC) $(CFLAGS) -c sips.c
 
 clean : 

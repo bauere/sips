@@ -1,11 +1,9 @@
 /* sips: a simple ips patcher */
-
+/* See LICENSE for license details. */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "sips.h"
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -13,7 +11,64 @@ static int log_flag = 0;
 static uint8_t *input_bytes;
 static size_t input_size;
 
-int check_header(FILE *patch)
+/* Prevent big endian byte swaps. */
+uint16_t
+byte2_to_uint(uint8_t *bytes)
+{
+	return (((uint16_t)bytes[0] << 8) & 0xFF00) | \
+	       (((uint16_t)bytes[1])      & 0x00FF);
+}
+uint32_t
+byte3_to_uint(uint8_t *bytes)
+{
+	return (((uint32_t)bytes[0] << 16) & 0x00FF0000) | \
+	       (((uint32_t)bytes[1] << 8) & 0x0000FF00) | \
+	       (((uint32_t)bytes[2]));
+}
+int
+apply_record(FILE *patch, uint16_t size, uint32_t offset)
+{
+	uint8_t patchbyte;
+
+	if (log_flag) {
+		printf("%06X\t%04X\tno\tn/a\t\t%06X\n", \
+		       offset, size, input_size);
+	}
+	if ((offset + size) > input_size) {
+		input_bytes = realloc(input_bytes, offset + size);
+		if (!input_bytes)
+			return -1;
+
+		input_size = offset + size;
+	}
+	for (int i = 0; i < size; i++) {
+		patchbyte = fgetc(patch);
+		input_bytes[offset + i] = patchbyte;
+	}
+	return 0;
+}
+int
+apply_record_rle(FILE *patch, uint16_t size, uint32_t offset)
+{
+	uint8_t patchbyte = fgetc(patch);
+
+	if (log_flag) {
+		printf("%06X\t0000\tyes\t%04X\t\t%06X\n", \
+		       offset, size, input_size);
+	}
+	if ((offset + size) > input_size) {
+		input_bytes = realloc(input_bytes, offset + size);
+		if (!input_bytes)
+			return -1;
+
+		input_size = offset + size;
+	}
+	for (int i = 0; i < size; i++)
+		input_bytes[offset + i] = patchbyte;
+	return 0;
+}
+int
+check_header(FILE *patch)
 {
 	uint8_t buf[5];
 
@@ -25,7 +80,8 @@ int check_header(FILE *patch)
 	}
 	return 0;
 }
-int read_records(FILE *patch)
+int
+read_records(FILE *patch)
 {
 	uint8_t offset_bytes[3];
 	uint8_t size_bytes[2];
@@ -59,59 +115,8 @@ int read_records(FILE *patch)
 	}
 	return 0;
 }
-int apply_record(FILE *patch, uint16_t size, uint32_t offset)
-{
-	uint8_t patchbyte;
-
-	if (log_flag) {
-		printf("%06X\t%04X\tno\tn/a\t\t%06X\n", \
-		       offset, size, input_size);
-	}
-	if ((offset + size) > input_size) {
-		input_bytes = realloc(input_bytes, offset + size);
-		if (!input_bytes)
-			return -1;
-
-		input_size = offset + size;
-	}
-	for (int i = 0; i < size; i++) {
-		patchbyte = fgetc(patch);
-		input_bytes[offset + i] = patchbyte;
-	}
-	return 0;
-}
-int apply_record_rle(FILE *patch, uint16_t size, uint32_t offset)
-{
-	uint8_t patchbyte = fgetc(patch);
-
-	if (log_flag) {
-		printf("%06X\t0000\tyes\t%04X\t\t%06X\n", \
-		       offset, size, input_size);
-	}
-	if ((offset + size) > input_size) {
-		input_bytes = realloc(input_bytes, offset + size);
-		if (!input_bytes)
-			return -1;
-
-		input_size = offset + size;
-	}
-	for (int i = 0; i < size; i++)
-		input_bytes[offset + i] = patchbyte;
-	return 0;
-}
-/* Prevent big endian byte swaps. */
-inline uint16_t byte2_to_uint(uint8_t *bytes)
-{
-	return (((uint16_t)bytes[0] << 8) & 0xFF00) | \
-	       (((uint16_t)bytes[1])      & 0x00FF);
-}
-inline uint32_t byte3_to_uint(uint8_t *bytes)
-{
-	return (((uint32_t)bytes[0] << 16) & 0x00FF0000) | \
-	       (((uint32_t)bytes[1] << 8) & 0x0000FF00) | \
-	       (((uint32_t)bytes[2]));
-}
-int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
+int
+arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 {
 	if (argc < 4 || argc > 5)
 		return -1;
@@ -136,7 +141,8 @@ int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 	}
 
 }
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	FILE *in = 0;
 	FILE *patch = 0;
