@@ -8,7 +8,6 @@
 #include "sips.h"
 
 #define _POSIX_C_SOURCE 200809L
-#define USAGE "Usage: sips [-v] <input> <patch> <output>"
 
 static int log_flag = 0;
 static uint8_t *input_bytes;
@@ -103,17 +102,14 @@ int apply_record_rle(FILE *patch, uint16_t size, uint32_t offset)
 /* Prevent big endian byte swaps. */
 inline uint16_t byte2_to_uint(uint8_t *bytes)
 {
-	uint16_t ret = (((uint16_t)bytes[0] << 8) & 0xFF00) | \
-		       (((uint16_t)bytes[1])      & 0x00FF);
-
-	return ret;
+	return (((uint16_t)bytes[0] << 8) & 0xFF00) | \
+	       (((uint16_t)bytes[1])      & 0x00FF);
 }
 inline uint32_t byte3_to_uint(uint8_t *bytes)
 {
-	uint32_t ret =  (((uint32_t)bytes[0] << 16) & 0x00FF0000) | \
-			(((uint32_t)bytes[1] << 8) & 0x0000FF00) | \
-			(((uint32_t)bytes[2]));
-	return ret;
+	return (((uint32_t)bytes[0] << 16) & 0x00FF0000) | \
+	       (((uint32_t)bytes[1] << 8) & 0x0000FF00) | \
+	       (((uint32_t)bytes[2]));
 }
 int arghandler(int argc, char **argv, FILE **in, FILE **patch, FILE **out)
 {
@@ -147,8 +143,8 @@ int main(int argc, char **argv)
 	FILE *out = 0;
 
 	if (arghandler(argc, argv, &in, &patch, &out) < 0) {
-		puts(USAGE);
-		return 0;
+		puts("Usage: sips [-v] <input> <patch> <output>");
+		return -1;
 	}
 
 	fseek(in, 0, SEEK_END);
@@ -162,13 +158,18 @@ int main(int argc, char **argv)
 
 	if (check_header(patch) < 0) {
 		puts("Invalid patch file.");
-		return 0;
+		return -1;
 	}
 	if (read_records(patch) < 0) {
 		puts("Memory allocation error.");
-		return 0;
+		return -1;
 	}
 
 	fwrite(input_bytes, input_size, 1, out);
+
+	fclose(patch);
+	fclose(out);
+	free(input_bytes);
+
 	return 0;
 }
